@@ -1,0 +1,10 @@
+.env
+.env.dev
+.env.qa
+.env.prod
+bin/
+logs/
+tmp/
+*.exe
+*.out
+vendor/

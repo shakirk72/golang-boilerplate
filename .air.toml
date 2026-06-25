@@ -1,0 +1,31 @@
+[build]
+  # Run swag init first, then build the binary
+  pre_cmd  = ["swag init -g src/cmd/main.go -o docs --quiet"]
+  cmd      = "go build -o ./tmp/server ./src/cmd/main.go"
+  bin      = "./tmp/server"
+  full_bin = "APP_ENV=dev ./tmp/server"
+
+  # Watch these extensions
+  include_ext = ["go", "toml", "env"]
+
+  # Ignore generated docs and tmp so we don't trigger a loop
+  exclude_dir  = ["docs", "tmp", "vendor"]
+  exclude_file = ["docs/docs.go", "docs/swagger.json", "docs/swagger.yaml"]
+
+  # Delay before rebuild (ms) — avoids rapid re-triggers on multi-file saves
+  delay = 1000
+
+  kill_delay = "500ms"
+  rerun      = false
+
+[log]
+  time = true
+
+[color]
+  main    = "magenta"
+  watcher = "cyan"
+  build   = "yellow"
+  runner  = "green"
+
+[misc]
+  clean_on_exit = true

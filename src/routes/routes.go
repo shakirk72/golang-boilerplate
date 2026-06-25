@@ -45,7 +45,8 @@ func Health(c *gin.Context) {
 	})
 }
 
-func Setup(r *gin.Engine) {
+func Setup(r *gin.Engine, drainer *middleware.Drainer) {
+	r.Use(drainer.Handler())
 	r.Use(middleware.Recovery())
 	r.Use(middleware.RequestID())
 	r.Use(middleware.Logger())

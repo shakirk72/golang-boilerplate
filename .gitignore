@@ -1,10 +1,18 @@
+# Environment / secrets
 .env
 .env.dev
 .env.qa
 .env.prod
+
+# Compiled binaries
 bin/
-logs/
-tmp/
+dist/
+main
+cmd
 *.exe
 *.out
+
+# Runtime artifacts
+logs/
+tmp/
 vendor/

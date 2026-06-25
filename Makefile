@@ -1,5 +1,7 @@
 .PHONY: dev watch qa prod swagger tidy build install-swag install-air
 
+DIST := dist/server
+
 ## Install swag CLI (one-time)
 install-swag:
 	go install github.com/swaggo/swag/cmd/swag@latest
@@ -20,18 +22,25 @@ tidy:
 watch:
 	air
 
-## One-shot run — APP_ENV is read from .env (default: dev)
+## One-shot run — compiles then runs binary so Ctrl+C exits cleanly (APP_ENV from .env)
 dev: swagger
-	go run ./src/cmd/main.go
+	@mkdir -p dist
+	go build -o $(DIST) ./src/cmd/main.go
+	-$(DIST)
 
 ## Override env to qa at runtime
-qa:
-	APP_ENV=qa go run ./src/cmd/main.go
+qa: swagger
+	@mkdir -p dist
+	go build -o $(DIST) ./src/cmd/main.go
+	-APP_ENV=qa $(DIST)
 
 ## Override env to prod at runtime
-prod:
-	APP_ENV=prod go run ./src/cmd/main.go
+prod: swagger
+	@mkdir -p dist
+	go build -o $(DIST) ./src/cmd/main.go
+	-APP_ENV=prod $(DIST)
 
-## Build binary
+## Build binary into dist/
 build: swagger
-	go build -o bin/server ./src/cmd/main.go
+	@mkdir -p dist
+	go build -o $(DIST) ./src/cmd/main.go

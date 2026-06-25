@@ -21,7 +21,8 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,6 +32,7 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/yourorg/go-mvc-app/docs"
 	"github.com/yourorg/go-mvc-app/src/config"
+	"github.com/yourorg/go-mvc-app/src/middleware"
 	"github.com/yourorg/go-mvc-app/src/routes"
 	"github.com/yourorg/go-mvc-app/src/utils/database"
 	"github.com/yourorg/go-mvc-app/src/utils/logger"
@@ -38,6 +40,32 @@ import (
 )
 
 func main() {
+	// Read APP_ENV and APP_PORT directly from OS env so we can bind the port
+	// and route secrets before the full config.Load call.
+	appEnv := os.Getenv("APP_ENV")
+	if appEnv == "" {
+		appEnv = config.EnvDev
+	}
+	appPort := os.Getenv("APP_PORT")
+	if appPort == "" {
+		appPort = config.Common.DefaultPort
+	}
+	addr := ":" + appPort
+
+	// Bind the port immediately — OS slot is claimed before any blocking init.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("failed to bind %s: %v", addr, err)
+	}
+
+	// Load secrets into env vars (AWS SecretManager in prod, no-op otherwise).
+	// Must run before config.Load so injected keys are visible to it.
+	secretsCtx, secretsCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer secretsCancel()
+	if err := config.LoadSecrets(secretsCtx, appEnv); err != nil {
+		log.Fatalf("failed to load secrets: %v", err)
+	}
+
 	config.Load(".env")
 
 	logger.Init(config.App.App.Env)
@@ -54,12 +82,11 @@ func main() {
 	database.Connect()
 	database.Migrate()
 
+	drainer := new(middleware.Drainer)
 	r := gin.New()
-	routes.Setup(r)
+	routes.Setup(r, drainer)
 
-	addr := fmt.Sprintf(":%s", config.App.App.Port)
 	srv := &http.Server{
-		Addr:         addr,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
@@ -67,9 +94,9 @@ func main() {
 	}
 
 	go func() {
-		logger.Info("server starting", zap.String("addr", addr), zap.String("env", config.App.App.Env))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatal("server failed to start", zap.Error(err))
+		logger.Info("server listening", zap.String("addr", addr), zap.String("env", config.App.App.Env))
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("server error", zap.Error(err))
 		}
 	}()
 
@@ -77,12 +104,14 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("shutdown signal received, draining connections...")
+	logger.Info("shutdown signal received, waiting for in-flight requests...")
+	drainer.Drain()
+	logger.Info("all requests completed, closing server")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	shutCtx, shutCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutCancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(shutCtx); err != nil {
 		logger.Error("server forced to shutdown", zap.Error(err))
 	}
 
